@@ -12,8 +12,9 @@ OFILES= ${wildcard ./*.o}
 
 #Execution flags
 MAT = utm300.mtx_300x300_3155nnz1
-MPI_NODES = 30
-NB = 3000
+MPI_NODES = 2
+NB = 2
+MATTYPE = matblock
 
 include ${PETSC_DIR}/lib/petsc/conf/variables
 include ${PETSC_DIR}/lib/petsc/conf/rules
@@ -41,5 +42,5 @@ exec: gen.o
 	-@echo "========================================="
 
 runa:
-	-@${MPIEXEC} -np ${MPI_NODES} ./generateur -mfile ${MAT} -nb ${NB}
+	-@${MPIEXEC} -np ${MPI_NODES} ./generateur -mfile ${MAT} -nb ${NB} -type ${MATTYPE}
 

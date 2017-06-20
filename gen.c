@@ -1,7 +1,7 @@
 #include "gen.h"
 #define PI 3.1415926
 
-static char help[] = "Matrix Market file to PETSc binary converter";
+static char help[] = "Block matrix generator";
 
 PetscReal uniform_distribution(PetscReal rangeLow, PetscReal rangeHigh) {
   PetscReal myRand = rand()/(1.0 + RAND_MAX);
@@ -36,29 +36,45 @@ PetscErrorCode read_matrix_vector(Mat * A){
 
 PetscErrorCode MatGenbyOther(){
 
-	PetscInt       ggn, ggm,k1, k2, i,m,n,k,gcol,grow, gn, gm;
-	double	      nnz, gnnz;
-	PetscScalar	rnd_value, value;
-	PetscInt      start, end, rstart, rend;
-	PetscRandom   rnd;
-	PetscInt 	size;
-	PetscInt nb;
-	PetscInt        ncols;
-	MatInfo     	minfo,Ainfo;
-	PetscBool 		nbflg;
-	PetscErrorCode ierr;
-	Mat A, M;
-	PetscViewer    output_viewer;
-	char           matrixOutputFile[PETSC_MAX_PATH_LEN];
-	const PetscInt    *cols;
-	const PetscScalar *vals;
-	PetscInt	*gcols;
-        PetscInt idxcol;
-
+	PetscInt       		ggn, ggm,k1, k2, i,m,n,k,gcol,grow, gn, gm;
+	double	      		nnz, gnnz;
+	PetscScalar		rnd_value, value;
+	PetscInt      		start, end, rstart, rend;
+	PetscRandom   		rnd;
+	PetscInt 		size;
+	PetscInt 		nb;
+	PetscInt        	ncols;
+	MatInfo     		minfo,Ainfo;
+	PetscBool 		nbflg, mtflg;
+	PetscErrorCode 		ierr;
+	Mat 			A, M;
+	PetscViewer    		output_viewer;
+	char           		matrixOutputFile[PETSC_MAX_PATH_LEN];
+	const PetscInt    	*cols;
+	const PetscScalar 	*vals;
+	PetscInt		*gcols;
+        PetscInt 		idxcol;
+	char			type[PETSC_MAX_PATH_LEN];
 
 	MPI_Comm_size(PETSC_COMM_WORLD,&size);
 
-	PetscPrintf(PETSC_COMM_WORLD, "The MPI world size is %d \n\n", size);
+	PetscPrintf(PETSC_COMM_WORLD, "The MPI world size is %d \n", size);
+	PetscOptionsGetString(NULL,NULL,"-type",type,PETSC_MAX_PATH_LEN,&mtflg);
+
+	if(!mtflg){
+                PetscPrintf(PETSC_COMM_WORLD, "ERROR: Unset the generated matrix type \n");
+                return 0;
+        }
+	else if(strcmp(type,"matline") == 0 || strcmp(type, "matblock") == 0){
+		PetscPrintf(PETSC_COMM_WORLD, "The generated matrix type is %s \n", type);
+	}
+	else{
+                PetscPrintf(PETSC_COMM_WORLD, "ERROR: The set matrix type name is WRONG \nERROR: PLEASE select from matline and matblock\n");
+                return 0;
+	}
+
+
+
 
 	ierr=PetscOptionsGetInt(NULL,PETSC_NULL,"-nb",&nb,&nbflg);CHKERRQ(ierr);
 
@@ -91,38 +107,55 @@ PetscErrorCode MatGenbyOther(){
 	ierr = MatGetOwnershipRange(A, &start, &end);CHKERRQ(ierr);
 	ierr = MatGetOwnershipRange(M, &rstart, &rend);CHKERRQ(ierr);
 
-	for(k = 0; k< nb; k++){
-    		for(i = rstart; i < rend; i++){
-    			MatGetRow(M,i,&ncols,&cols,&vals);
-        		PetscMalloc1(ncols,&gcols);
-			idxcol = i + k*m;
-				for(k1 = 0; k1 < ncols; k1++){
-					gcols[k1] = cols[k1] + k*m;
-				}
-			ierr = MatSetValues(A,1,&idxcol,ncols,gcols,vals,INSERT_VALUES);CHKERRQ(ierr);
-    			MatRestoreRow(M,i,&ncols,&cols,&vals);
-	    	}
-	}
-	for(k2 = start; k2 < end; k2++){
-		if (k2 % 100 == 0 && k2 < gm - 350){
-			gcol = k;
-                        grow = k + 350;
-                        PetscRandomGetValue(rnd,&rnd_value);
-                        value=0.01*rnd_value;
-                    ierr = MatSetValues(A,1,&grow,1,&gcol,&value,INSERT_VALUES);CHKERRQ(ierr);
+	if(strcmp(type, "matline") == 0){
+		for(k = 0; k< nb; k++){
+    			for(i = rstart; i < rend; i++){
+    				MatGetRow(M,i,&ncols,&cols,&vals);
+        			PetscMalloc1(ncols,&gcols);
+				idxcol = i + k*m;
+					for(k1 = 0; k1 < ncols; k1++){
+						gcols[k1] = cols[k1] + k*m;
+					}
+				ierr = MatSetValues(A,1,&idxcol,ncols,gcols,vals,INSERT_VALUES);CHKERRQ(ierr);
+    				MatRestoreRow(M,i,&ncols,&cols,&vals);
+	    		}
+		}
+		for(k2 = start; k2 < end; k2++){
+			if (k2 % 100 == 0 && k2 < gm - 350){
+				gcol = k;
+                        	grow = k + 350;
+                        	PetscRandomGetValue(rnd,&rnd_value);
+                        	value=0.01*rnd_value;
+                    		ierr = MatSetValues(A,1,&grow,1,&gcol,&value,INSERT_VALUES);CHKERRQ(ierr);
+			}
 		}
 	}
-	MatGetSize(A, &ggm, &ggn);
-        MatGetInfo(A,MAT_GLOBAL_SUM,&Ainfo);
-        gnnz = Ainfo.nz_used;
+
+        if(strcmp(type, "matblock") == 0){
+                for(k = 0; k< nb; k++){
+                        for(i = rstart; i < rend; i++){
+                                MatGetRow(M,i,&ncols,&cols,&vals);
+                                PetscMalloc1(ncols,&gcols);
+                                idxcol = i + k*m;
+                                        for(k1 = 0; k1 < ncols; k1++){
+                                                gcols[k1] = cols[k1] + k*m;
+                                        }
+                                ierr = MatSetValues(A,1,&idxcol,ncols,gcols,vals,INSERT_VALUES);CHKERRQ(ierr);
+                                ierr = MatSetValues(A,1,&i,ncols,gcols,vals,INSERT_VALUES);CHKERRQ(ierr);
+			        MatRestoreRow(M,i,&ncols,&cols,&vals);
+                        }
+                }
+        }
 	/*Matrix assembly*/
 	PetscPrintf(PETSC_COMM_WORLD,"Assembling matrix within PETSc.\n");
 	MatAssemblyBegin(A,MAT_FINAL_ASSEMBLY);
 	MatAssemblyEnd(A,MAT_FINAL_ASSEMBLY);
 //	MatView(A,PETSC_VIEWER_STDOUT_WORLD);
-
+        MatGetSize(A, &ggm, &ggn);
+        MatGetInfo(A,MAT_GLOBAL_SUM,&Ainfo);
+        gnnz = Ainfo.nz_used;
 	PetscPrintf(PETSC_COMM_WORLD,"Finished matrix assembly.\n");
-	sprintf(matrixOutputFile,"Block_matrix_nb_%d_%dx%d_%g_nnz.gz",nb, ggm,ggn,gnnz);
+	sprintf(matrixOutputFile,"%s_nb_%d_%dx%d_%g_nnz.gz",type, nb, ggm,ggn,gnnz);
 	PetscPrintf(PETSC_COMM_WORLD,"Dumping matrix to PETSc binary %s\n",matrixOutputFile);	
 	PetscViewerBinaryOpen(PETSC_COMM_WORLD,matrixOutputFile,FILE_MODE_WRITE,&output_viewer);
 	PetscViewerPushFormat(output_viewer,PETSC_VIEWER_ASCII_INFO_DETAIL);
